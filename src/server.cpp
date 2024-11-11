@@ -68,7 +68,7 @@ auto Server::start() -> void {
 
     if (client_fd == -1) {
       std::printf("Failed to connect: %s \n", strerror(errno));
-      exit(1);
+      continue;
     }
 
     std::thread(&Server::handleRequest, this, client_fd).detach();
@@ -107,11 +107,9 @@ auto Server::handleRequest(int fd) const -> void {
     bool fileHandled = false;
 
     std::string path = headers["Path"];
-    if (path == "/") {
-      path = "/index.html";
+    if (path == "/" || path[path.length() - 1] == (char)'/') {
+      path += "index.html";
     }
-
-    std::cout << path << std::endl;
 
     // Check file extensions
     for (const auto &ext : fileTypes) {
