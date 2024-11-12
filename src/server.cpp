@@ -1,12 +1,19 @@
 #include "inc/server.hpp"
 #include "inc/defaults.hpp"
 #include <cerrno>
+#include <iostream>
+#include <mutex>
 #include <print>
 #include <string>
 #include <thread>
 #include <unistd.h>
+#include <unordered_map>
 
 namespace HTTP {
+
+// Class defs
+Server * Server::instance = nullptr;
+std::mutex Server::mtx;
 
 Server::Server(int port) {
   // create ip+port struct
@@ -53,8 +60,8 @@ Server::~Server() { close(Server::server_fd); }
 
 // Public methods
 
-auto Server::addRoute(const std::string &path, std::function<void(int)> handler)
-    -> void {
+auto Server::addRoute(const std::string &path,
+                      std::function<void(int fd)> handler) -> void {
   routes[path] = handler;
 }
 
@@ -79,20 +86,73 @@ auto Server::start() -> void {
 
 // Private methods
 
-auto Server::handleRequest(int fd) const -> void {
+auto Server::loadHeaders(int fd) -> void {
+  std::string request;
   char readBuffer[1024];
-  int bytesReceived = recv(fd, readBuffer, sizeof(readBuffer) - 1,
-                           0); // leave room for null terminator
-  if (bytesReceived == -1) {
-    std::printf("Receiving failed: %s \n", strerror(errno));
-    close(fd);
-    return;
+  HTTP::Headers head;
+
+  while (true) {
+    int bytesReceived = recv(fd, readBuffer, sizeof(readBuffer) - 1, 0);
+    if (bytesReceived == -1) {
+      std::printf("Receiving failed: %s \n", strerror(errno));
+      return;
+    } else if (bytesReceived == 0) {
+      // Client closed the connection
+      std::printf("Client closed connection\n");
+      return;
+    }
+
+    // Null-terminate and append to request
+    readBuffer[bytesReceived] = '\0';
+    request += readBuffer;
+
+    if (request.find("\r\n\r\n") != std::string::npos) {
+      break; // Complete headers have been read
+    }
   }
 
-  // Null-terminate the buffer to ensure it's a valid C-string
-  readBuffer[bytesReceived] = '\0';
+  // Parse headers after full receipt
+  std::istringstream requestStream(request);
+  std::string line;
+  bool firstLine = true;
 
-  auto headers = getHeaders(readBuffer);
+  if (std::getline(requestStream, line) && !line.empty()) {
+    std::istringstream lineStream(line);
+    std::string method, path, protocol;
+    lineStream >> method >> path >> protocol;
+    head["Method"] = method;
+    head["Path"] = path;
+    head["Protocol"] = protocol;
+  }
+
+  while (std::getline(requestStream, line)) {
+    if (line == "\r" || line.empty()) {
+      break; // End of headers reached
+    }
+
+    size_t colonPos = line.find(':');
+    if (colonPos != std::string::npos) {
+      std::string key = line.substr(0, colonPos);
+      std::string value = line.substr(colonPos + 1);
+
+      // Remove leading spaces in the value
+      value.erase(0, value.find_first_not_of(" \t"));
+
+      // Add to the map
+      head[key] = value;
+    }
+  }
+
+  this->headers = HTTP::Headers{head};
+  return;
+}
+
+auto Server::handleRequest(int fd) -> void {
+  this->loadHeaders(fd);
+  HTTP::Headers headers = getHeaders();
+
+  if (headers.empty())
+    close(fd);
 
   std::unordered_map<std::string, std::string> fileToContent;
   fileToContent["js"] = "javascript";
@@ -111,7 +171,6 @@ auto Server::handleRequest(int fd) const -> void {
   fileType["jpg"] = "image";
 
   auto item = routes.find(headers["Path"]);
-
   if (item != routes.end()) {
     item->second(fd);
   } else {
@@ -154,47 +213,6 @@ auto Server::handleRequest(int fd) const -> void {
 
   close(fd);
   return;
-}
-
-auto Server::getHeaders(char buffer[1024]) const
-    -> std::unordered_map<std::string, std::string> {
-  std::unordered_map<std::string, std::string> headers;
-  std::string request(buffer);
-  std::istringstream requestStream(request);
-  std::string line;
-  bool firstLine = true;
-
-  // Parsing the first line (Method, Path, Protocol)
-  if (std::getline(requestStream, line)) {
-    std::istringstream lineStream(line);
-    std::string method, path, protocol;
-    lineStream >> method >> path >> protocol;
-    headers["Method"] = method;
-    headers["Path"] = path;
-    headers["Protocol"] = protocol;
-  }
-
-  // Parsing subsequent headers
-  while (std::getline(requestStream, line)) {
-    // Skip empty lines (they should be at the end of headers)
-    if (line.empty()) {
-      continue;
-    }
-
-    // Find the first colon (the delimiter between key and value)
-    size_t colonPos = line.find(':');
-    if (colonPos != std::string::npos) {
-      std::string key = line.substr(0, colonPos);
-      std::string value = line.substr(colonPos + 1);
-
-      // Remove leading spaces in the value
-      value.erase(0, value.find_first_not_of(" \t"));
-
-      // Add to the map
-      headers[key] = value;
-    }
-  }
-  return headers;
 }
 
 } // namespace HTTP

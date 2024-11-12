@@ -10,7 +10,8 @@ auto notfound(int fd) -> void {
   }
 }
 
-auto sendfile(int fd, std::string path, std::string file) -> void {
+auto sendfile(int fd, std::string path, std::string file)
+    -> void {
 
   std::string fullpath = WWW + path;
 
@@ -38,9 +39,11 @@ auto sendfile(int fd, std::string path, std::string file) -> void {
     std::println("Send failed");
     return;
   }
+  return;
 }
 
-auto sendimage(int fd, std::string path, std::string file) -> void {
+auto sendimage(int fd, std::string path,
+               std::string file) -> void {
 
   std::string fullpath = WWW + path;
 
@@ -75,5 +78,6 @@ auto sendimage(int fd, std::string path, std::string file) -> void {
     std::println("Send failed");
     return;
   }
+  return;
 }
 } // namespace HTTP

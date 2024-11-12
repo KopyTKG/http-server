@@ -3,20 +3,22 @@
 
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <print>
 #include <sstream>
 #include <sys/socket.h>
-#include <filesystem>
-
+#include <unordered_map>
 
 namespace HTTP {
+typedef std::unordered_map<std::string, std::string> Headers;
+
 auto notfound(int fd) -> void;
 auto sendfile(int fd, std::string path, std::string file) -> void;
 auto sendimage(int fd, std::string path, std::string file) -> void;
 
 const std::string HEADERS = "Server: TheKrew\r\n\r\n";
-const std::string WWW = "/home/kopy/Dokumenty/lab/www"; 
+const std::string WWW = "/var/www";
 
 } // namespace HTTP
 
