@@ -6,7 +6,7 @@ auto notfound(int fd) -> void {
   int bytesSent = send(fd, res.c_str(), std::strlen(res.c_str()), 0);
   if (bytesSent < 0) {
     std::println("Send failed");
-    exit(1);
+    return;
   }
 }
 
@@ -17,7 +17,7 @@ auto sendfile(int fd, std::string path, std::string file) -> void {
   auto fileExist = std::filesystem::exists(fullpath);
   if (!fileExist) {
     notfound(fd);
-    exit(1);
+    return;
   }
   std::ifstream index(fullpath);
   std::stringstream buffer;
@@ -36,7 +36,7 @@ auto sendfile(int fd, std::string path, std::string file) -> void {
   int bytesSent = send(fd, res.str().c_str(), res.str().length(), 0);
   if (bytesSent < 0) {
     std::println("Send failed");
-    exit(1);
+    return;
   }
 }
 
@@ -48,7 +48,7 @@ auto sendimage(int fd, std::string path, std::string file) -> void {
 
   if (!f.is_open()) {
     notfound(fd);
-    exit(1);
+    return;
   }
   std::ifstream index(fullpath);
   std::stringstream buffer;
@@ -67,13 +67,13 @@ auto sendimage(int fd, std::string path, std::string file) -> void {
   int bytesSent = send(fd, res.str().c_str(), res.str().length(), 0);
   if (bytesSent < 0) {
     std::println("Send failed");
-    exit(1);
+    return;
   }
 
   bytesSent = send(fd, data.c_str(), data.size(), 0);
   if (bytesSent < 0) {
     std::println("Send failed");
-    exit(1);
+    return;
   }
 }
 } // namespace HTTP

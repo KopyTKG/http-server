@@ -1,8 +1,10 @@
 #include "inc/server.hpp"
 #include "inc/defaults.hpp"
-#include <iostream>
+#include <cerrno>
+#include <print>
 #include <string>
 #include <thread>
+#include <unistd.h>
 
 namespace HTTP {
 
@@ -83,7 +85,8 @@ auto Server::handleRequest(int fd) const -> void {
                            0); // leave room for null terminator
   if (bytesReceived == -1) {
     std::printf("Receiving failed: %s \n", strerror(errno));
-    exit(1);
+    close(fd);
+    return;
   }
 
   // Null-terminate the buffer to ensure it's a valid C-string
@@ -91,62 +94,66 @@ auto Server::handleRequest(int fd) const -> void {
 
   auto headers = getHeaders(readBuffer);
 
-  std::vector<std::string> fileTypes = {".html", ".css", ".htm", ".js"};
-  std::vector<std::string> imageTypes = {".png", ".jpg"};
-
   std::unordered_map<std::string, std::string> fileToContent;
   fileToContent["js"] = "javascript";
   fileToContent["htm"] = "html";
   fileToContent["html"] = "html";
   fileToContent["css"] = "css";
+  fileToContent["png"] = "png";
+  fileToContent["jpg"] = "jpg";
+
+  std::unordered_map<std::string, std::string> fileType;
+  fileType["js"] = "text";
+  fileType["htm"] = "text";
+  fileType["html"] = "text";
+  fileType["css"] = "text";
+  fileType["png"] = "image";
+  fileType["jpg"] = "image";
 
   auto item = routes.find(headers["Path"]);
+
   if (item != routes.end()) {
     item->second(fd);
   } else {
     bool fileHandled = false;
 
     std::string path = headers["Path"];
-    if (path == "/" || path[path.length() - 1] == (char)'/') {
+
+    auto dotindex = path.find(".");
+    if (dotindex == std::string::npos) {
+      if (path != "/" && path[path.length() - 1] != (char)'/') {
+        path += "/";
+      }
       path += "index.html";
     }
+    dotindex = path.find(".");
 
-    // Check file extensions
-    for (const auto &ext : fileTypes) {
-      if (path.size() >= ext.size() &&
-          path.compare(path.size() - ext.size(), ext.size(), ext) == 0) {
-        std::string extWithoutDot = ext.substr(1); // Remove the leading dot
-        sendfile(fd, path,
-                 fileToContent[extWithoutDot]); // Pass the content type
-        fileHandled = true;
-        break;
-      }
-    }
+    std::string ext = path.substr(dotindex + 1);
+    std::string content, type = "";
 
-    // Check image file types
-    if (!fileHandled) {
-      for (const auto &ext : imageTypes) {
-        if (path.size() >= ext.size() &&
-            path.compare(path.size() - ext.size(), ext.size(), ext) == 0) {
-          std::string extWithoutDot = ext.substr(1); // Remove the leading dot
-          sendimage(fd, path, extWithoutDot);        // Pass the content type
-          fileHandled = true;
-          break;
-        }
-      }
-    }
+    if (fileToContent.contains(ext))
+      content = fileToContent[ext];
 
-    // If no file or handler was found, serve 404
-    if (!fileHandled) {
+    if (fileType.contains(ext))
+      type = fileType[ext];
+
+    if (type == "" && content == "") {
       if (routes.find("/404") != routes.end()) {
         routes.at("/404")(fd);
       } else {
         std::printf("404 handler not found, closing connection.\n");
       }
     }
+
+    if (type == "text") {
+      sendfile(fd, path, content);
+    } else {
+      sendimage(fd, path, content);
+    }
   }
 
   close(fd);
+  return;
 }
 
 auto Server::getHeaders(char buffer[1024]) const
